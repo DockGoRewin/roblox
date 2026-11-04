@@ -1,5 +1,6 @@
--- SPECTATOR V5.2
+-- SPECTATOR V5.3
 -- Direct CameraSubject | PREV / NEXT / STOP | Player List | Draggable UI
+-- Fix: paksa CameraType+Subject, skip target belum ter-load, indikator hijau/merah
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,6 +16,7 @@ local targets = {}
 local currentTarget = nil
 local targetIndex = 0
 local spectating = false
+local dots = {} -- [player] = Frame indikator
 
 -- Bersihkan instance lama (GUI + koneksi)
 if _G.SpectatorV5Cleanup then
@@ -213,12 +215,29 @@ local function getHumanoid(player)
     return character and character:FindFirstChildOfClass("Humanoid")
 end
 
+local function isLoaded(player)
+    local hum = getHumanoid(player)
+    return hum ~= nil and hum.Health > 0
+end
+
+local GREEN = Color3.fromRGB(70, 200, 110)
+local RED = Color3.fromRGB(210, 70, 70)
+
+local function updateDots()
+    for player, dot in pairs(dots) do
+        if dot and dot.Parent then
+            dot.BackgroundColor3 = isLoaded(player) and GREEN or RED
+        end
+    end
+end
+
 local function rebuildList()
     for _, child in ipairs(List:GetChildren()) do
         if child:IsA("TextButton") then
             child:Destroy()
         end
     end
+    dots = {}
 
     EmptyLabel.Visible = (#targets == 0)
 
@@ -242,6 +261,24 @@ local function rebuildList()
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(0, 6)
         c.Parent = item
+
+        -- padding supaya teks tidak menimpa titik
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 22)
+        pad.PaddingRight = UDim.new(0, 6)
+        pad.Parent = item
+
+        -- indikator hijau (ter-load) / merah (belum)
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 8, 0, 8)
+        dot.Position = UDim2.new(0, -15, 0.5, -4)
+        dot.BackgroundColor3 = isLoaded(player) and GREEN or RED
+        dot.BorderSizePixel = 0
+        dot.Parent = item
+        local dc = Instance.new("UICorner")
+        dc.CornerRadius = UDim.new(1, 0)
+        dc.Parent = dot
+        dots[player] = dot
 
         item.MouseButton1Click:Connect(function()
             local idx = table.find(targets, player)
@@ -329,7 +366,7 @@ selectIndex = function(index)
     updateUI()
 end
 
--- dir = +1 (next) / -1 (prev)
+-- dir = +1 (next) / -1 (prev); melewati target yang belum ter-load
 local function moveTarget(dir)
     refreshTargets()
 
@@ -340,13 +377,24 @@ local function moveTarget(dir)
     end
 
     local base = targetIndex > 0 and targetIndex or (dir > 0 and 0 or 1)
+
+    for step = 1, #targets do
+        local idx = ((base + dir * step - 1) % #targets) + 1
+        if isLoaded(targets[idx]) then
+            selectIndex(idx)
+            return
+        end
+    end
+
+    -- tidak ada yang ter-load, pilih biasa lalu tunggu
     selectIndex(base + dir)
+    setStatus("Target di luar jarak streaming")
 end
 
--- Jaga CameraSubject tetap di target + auto-skip kalau tidak ke-load
+-- Jaga kamera tetap di target + auto-skip kalau tidak ke-load
 local waitStart = nil
 
-RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, function()
+RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Last.Value, function()
     if not spectating or not currentTarget then
         waitStart = nil
         return
@@ -356,7 +404,8 @@ RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, fun
     if humanoid and humanoid.Health > 0 then
         waitStart = nil
         local camera = workspace.CurrentCamera
-        if camera.CameraSubject ~= humanoid then
+        if camera.CameraSubject ~= humanoid
+            or camera.CameraType ~= Enum.CameraType.Custom then
             camera.CameraType = Enum.CameraType.Custom
             camera.CameraSubject = humanoid
         end
@@ -364,12 +413,25 @@ RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, fun
     else
         waitStart = waitStart or os.clock()
         local waited = os.clock() - waitStart
-        setStatus(string.format("Menunggu karakter target... (%ds)", waited))
+
+        local msg = currentTarget.Character
+            and "Menunggu karakter target... (%ds)"
+            or "Target jauh / belum ter-stream (%ds)"
+        setStatus(string.format(msg, waited))
 
         if waited > SKIP_AFTER and #targets > 1 then
             waitStart = nil
             moveTarget(1)
         end
+    end
+end)
+
+-- Update indikator hijau/merah tiap 1 detik (hanya saat panel terbuka)
+local lastDotUpdate = 0
+connect(RunService.Heartbeat, function()
+    if Main.Visible and os.clock() - lastDotUpdate >= 1 then
+        lastDotUpdate = os.clock()
+        updateDots()
     end
 end)
 
@@ -392,7 +454,7 @@ connect(Toggle.MouseButton1Click, function()
         if spectating then
             updateUI()
         else
-            selectIndex(1)
+            moveTarget(1)
         end
     end
 end)
@@ -433,4 +495,4 @@ end
 refreshTargets()
 updateUI()
 
-print("Spectator V5.2 loaded")
+print("Spectator V5.3 loaded")
