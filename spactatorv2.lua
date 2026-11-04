@@ -1,322 +1,221 @@
--- SPECTATOR V2
--- Executor / Client Side
--- Scriptable Camera Follow
+-- SPECTATOR SYSTEM (FIXED)
+-- Roblox LocalScript
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local LocalPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
 
--- Cleanup previous GUI
-pcall(function()
-    game:GetService("CoreGui"):FindFirstChild("SpectatorExecutor"):Destroy()
-end)
+local currentTarget = nil
+local targets = {}
+local currentIndex = 0
+local spectating = false
 
-local Targets = {}
-local TargetIndex = 1
-local CurrentTarget = nil
-local Active = false
-local CameraConnection = nil
-
-local CameraOffset = Vector3.new(0, 5, 12)
-
--- GUI
-local GUI = Instance.new("ScreenGui")
-GUI.Name = "SpectatorExecutor"
-GUI.ResetOnSpawn = false
-
-local success = pcall(function()
-    GUI.Parent = game:GetService("CoreGui")
-end)
-
-if not success then
-    GUI.Parent = LocalPlayer:WaitForChild("PlayerGui")
-end
-
-local Main = Instance.new("Frame")
-Main.Size = UDim2.fromOffset(280, 165)
-Main.Position = UDim2.new(0.5, -140, 0.5, -82)
-Main.BackgroundColor3 = Color3.fromRGB(17, 20, 32)
-Main.BorderSizePixel = 0
-Main.Active = true
-Main.Draggable = true
-Main.Parent = GUI
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
-corner.Parent = Main
-
-local function Label(text, position, size)
-    local obj = Instance.new("TextLabel")
-    obj.Position = position
-    obj.Size = size
-    obj.BackgroundTransparency = 1
-    obj.Text = text
-    obj.TextColor3 = Color3.new(1, 1, 1)
-    obj.Font = Enum.Font.GothamBold
-    obj.TextSize = 13
-    obj.Parent = Main
-    return obj
-end
-
-local Title = Label(
-    "SPECTATOR V2",
-    UDim2.fromOffset(0, 5),
-    UDim2.new(1, 0, 0, 25)
-)
-
-Title.TextColor3 = Color3.fromRGB(160, 130, 255)
-Title.TextSize = 17
-
-local Info = Label(
-    "No Player Selected",
-    UDim2.fromOffset(10, 38),
-    UDim2.new(1, -20, 0, 43)
-)
-
-Info.BackgroundColor3 = Color3.fromRGB(30, 35, 52)
-Info.BackgroundTransparency = 0
-Info.TextWrapped = true
-
-local infoCorner = Instance.new("UICorner")
-infoCorner.CornerRadius = UDim.new(0, 7)
-infoCorner.Parent = Info
-
-local function Button(name, text, x, width, color)
-    local b = Instance.new("TextButton")
-    b.Name = name
-    b.Position = UDim2.fromOffset(x, 92)
-    b.Size = UDim2.fromOffset(width, 32)
-    b.BackgroundColor3 = color or Color3.fromRGB(48, 53, 76)
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Text = text
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 11
-    b.BorderSizePixel = 0
-    b.Parent = Main
-
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 7)
-    c.Parent = b
-
-    return b
-end
-
-local Prev = Button("Previous", "◀ PREV", 10, 75)
-local Next = Button("Next", "NEXT ▶", 92, 75)
-local Refresh = Button("Refresh", "↻", 174, 35)
-local Stop = Button("Stop", "STOP", 215, 55, Color3.fromRGB(170, 45, 55))
-
-local Status = Label(
-    "READY",
-    UDim2.fromOffset(0, 132),
-    UDim2.new(1, 0, 0, 22)
-)
-
-Status.TextColor3 = Color3.fromRGB(170, 175, 195)
-Status.TextSize = 10
-
--- Camera
-local function GetCamera()
+local function getCamera()
     return workspace.CurrentCamera
 end
 
-local function RestoreCamera()
-    Active = false
-    CurrentTarget = nil
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "SpectatorGui"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
 
-    if CameraConnection then
-        CameraConnection:Disconnect()
-        CameraConnection = nil
-    end
+-- Tombol toggle (untuk HP)
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 110, 0, 36)
+toggleButton.Position = UDim2.new(0, 10, 0.5, 0)
+toggleButton.BackgroundColor3 = Color3.fromRGB(15, 20, 35)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Text = "👁 Spectate"
+toggleButton.TextSize = 14
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = gui
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0, 8)
 
-    local camera = GetCamera()
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+-- Main Frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 280, 0, 115)
+frame.Position = UDim2.new(0.5, -140, 0.85, 0)
+frame.BackgroundColor3 = Color3.fromRGB(15, 20, 35)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.Visible = false
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
 
-    if camera then
-        camera.CameraType = Enum.CameraType.Custom
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Size = UDim2.new(1, 0, 0, 35)
+nameLabel.Position = UDim2.new(0, 0, 0, 5)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Text = "Spectating: None"
+nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+nameLabel.TextSize = 16
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.Parent = frame
 
-        if humanoid then
-            camera.CameraSubject = humanoid
-        end
-    end
-
-    Info.Text = "Spectating Stopped"
-    Status.Text = "CAMERA RESTORED"
+local function createButton(name, text, position, size)
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Size = size
+    button.Position = position
+    button.BackgroundColor3 = Color3.fromRGB(40, 50, 75)
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Text = text
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.BorderSizePixel = 0
+    button.Parent = frame
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+    return button
 end
 
--- Player list
-local function UpdatePlayers()
-    Targets = {}
+local previousButton = createButton("Previous", "◀ Previous", UDim2.new(0, 10, 0, 48), UDim2.new(0, 95, 0, 35))
+local nextButton = createButton("Next", "Next ▶", UDim2.new(0, 175, 0, 48), UDim2.new(0, 95, 0, 35))
+local exitButton = createButton("Exit", "EXIT", UDim2.new(0.5, -35, 0, 88), UDim2.new(0, 70, 0, 22))
+exitButton.BackgroundColor3 = Color3.fromRGB(170, 45, 55)
 
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local character = p.Character
+-- Ambil daftar target yang hidup
+local function updateTargets()
+    targets = {}
+    for _, target in ipairs(Players:GetPlayers()) do
+        if target ~= player then
+            local character = target.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-
-            if humanoid and root and humanoid.Health > 0 then
-                table.insert(Targets, p)
+            if humanoid and humanoid.Health > 0 then
+                table.insert(targets, target)
             end
         end
     end
 end
 
--- Start camera follow
-local function StartCamera(target)
-    if CameraConnection then
-        CameraConnection:Disconnect()
-        CameraConnection = nil
-    end
+-- Pilih target (kamera diatur oleh loop di bawah)
+local function spectatePlayer(index)
+    updateTargets()
 
-    local character = target.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-
-    if not root then
-        Status.Text = "WAITING FOR CHARACTER"
-        return false
-    end
-
-    CurrentTarget = target
-    Active = true
-
-    local camera = GetCamera()
-    camera.CameraType = Enum.CameraType.Scriptable
-
-    local currentCFrame = camera.CFrame
-
-    CameraConnection = RunService.RenderStepped:Connect(function(dt)
-        if not Active or CurrentTarget ~= target then
-            return
-        end
-
-        -- Refresh camera reference
-        camera = GetCamera()
-
-        if not camera then return end
-
-        -- Check target character
-        local char = target.Character
-        local targetRoot = char and char:FindFirstChild("HumanoidRootPart")
-        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-
-        if not targetRoot or not humanoid or humanoid.Health <= 0 then
-            Status.Text = "TARGET UNAVAILABLE"
-            return
-        end
-
-        -- Force Scriptable mode
-        if camera.CameraType ~= Enum.CameraType.Scriptable then
-            camera.CameraType = Enum.CameraType.Scriptable
-        end
-
-        -- Camera behind target
-        local offset = targetRoot.CFrame:VectorToWorldSpace(CameraOffset)
-
-        local cameraPosition = targetRoot.Position + offset
-        local lookPosition = targetRoot.Position + Vector3.new(0, 2, 0)
-
-        local desiredCFrame = CFrame.lookAt(
-            cameraPosition,
-            lookPosition
-        )
-
-        -- Smooth camera movement
-        local alpha = 1 - math.exp(-8 * dt)
-        currentCFrame = currentCFrame:Lerp(desiredCFrame, alpha)
-
-        camera.CFrame = currentCFrame
-        camera.Focus = CFrame.new(lookPosition)
-    end)
-
-    return true
-end
-
--- Spectate
-local function Spectate(index)
-    UpdatePlayers()
-
-    if #Targets == 0 then
-        CurrentTarget = nil
-        Info.Text = "No Players Available"
-        Status.Text = "NO TARGET"
+    if #targets == 0 then
+        nameLabel.Text = "No players available"
+        currentTarget = nil
         return
     end
 
-    TargetIndex = ((index - 1) % #Targets) + 1
+    if index > #targets then
+        index = 1
+    elseif index < 1 then
+        index = #targets
+    end
 
-    local target = Targets[TargetIndex]
+    currentIndex = index
+    currentTarget = targets[currentIndex]
+    nameLabel.Text = "Spectating: " .. currentTarget.DisplayName
 
-    Info.Text = target.DisplayName .. "\n@" .. target.Name
-
-    if StartCamera(target) then
-        Status.Text = "SPECTATING " .. TargetIndex .. "/" .. #Targets
+    -- Pastikan area target ter-stream (kalau StreamingEnabled)
+    local char = currentTarget.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        pcall(function()
+            player:RequestStreamAroundAsync(root.Position)
+        end)
     end
 end
 
--- Buttons
-Prev.MouseButton1Click:Connect(function()
-    Spectate(TargetIndex - 1)
+-- Paksa kamera ke target tiap frame (menimpa script kamera bawaan)
+RunService:BindToRenderStep("SpectatorCamera", Enum.RenderPriority.Camera.Value + 1, function()
+    if not spectating then return end
+
+    local camera = getCamera()
+    if not camera then return end
+
+    if not currentTarget or not currentTarget.Parent then
+        -- target keluar game, cari target baru
+        spectatePlayer(1)
+        return
+    end
+
+    local character = currentTarget.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    if humanoid then
+        if humanoid.Health <= 0 then
+            spectatePlayer(currentIndex + 1)
+            return
+        end
+        if camera.CameraType ~= Enum.CameraType.Custom then
+            camera.CameraType = Enum.CameraType.Custom
+        end
+        if camera.CameraSubject ~= humanoid then
+            camera.CameraSubject = humanoid
+        end
+    end
 end)
 
-Next.MouseButton1Click:Connect(function()
-    Spectate(TargetIndex + 1)
+local function stopSpectating()
+    spectating = false
+    currentTarget = nil
+    frame.Visible = false
+    toggleButton.Text = "👁 Spectate"
+
+    local camera = getCamera()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    camera.CameraType = Enum.CameraType.Custom
+    if humanoid then
+        camera.CameraSubject = humanoid
+    end
+end
+
+local function startSpectating()
+    spectating = true
+    frame.Visible = true
+    toggleButton.Text = "Stop"
+    spectatePlayer(1)
+end
+
+local function toggleSpectating()
+    if spectating then
+        stopSpectating()
+    else
+        startSpectating()
+    end
+end
+
+-- Tombol
+nextButton.MouseButton1Click:Connect(function()
+    if spectating then spectatePlayer(currentIndex + 1) end
 end)
 
-Refresh.MouseButton1Click:Connect(function()
-    Spectate(1)
+previousButton.MouseButton1Click:Connect(function()
+    if spectating then spectatePlayer(currentIndex - 1) end
 end)
 
-Stop.MouseButton1Click:Connect(function()
-    RestoreCamera()
+exitButton.MouseButton1Click:Connect(stopSpectating)
+toggleButton.MouseButton1Click:Connect(toggleSpectating)
+
+-- Shortcut keyboard
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        toggleSpectating()
+    end
 end)
 
--- Player leaves
-Players.PlayerRemoving:Connect(function(p)
-    if p == CurrentTarget and Active then
+-- Pemain keluar
+Players.PlayerRemoving:Connect(function(leavingPlayer)
+    if spectating and leavingPlayer == currentTarget then
         task.wait(0.2)
-        Spectate(TargetIndex)
+        spectatePlayer(1)
     end
 end)
 
--- Target respawn
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
-        if p == CurrentTarget and Active then
-            task.wait(1)
-            Spectate(TargetIndex)
-        end
-    end)
-end)
-
--- Existing players respawn
-for _, p in ipairs(Players:GetPlayers()) do
-    p.CharacterAdded:Connect(function()
-        if p == CurrentTarget and Active then
-            task.wait(1)
-            Spectate(TargetIndex)
-        end
-    end)
-end
-
--- Local respawn
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-
-    if not Active then
-        RestoreCamera()
+-- Respawn avatar sendiri: JANGAN reset kamera kalau lagi spectate
+player.CharacterAdded:Connect(function()
+    if not spectating then
+        task.wait(0.5)
+        stopSpectating()
     end
 end)
 
--- Initial
-UpdatePlayers()
-
-if #Targets > 0 then
-    Spectate(1)
-else
-    Status.Text = "WAITING FOR PLAYERS"
-end
-
-print("[Spectator V2] Loaded!")
+print("Spectator System Loaded!")
