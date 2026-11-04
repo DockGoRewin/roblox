@@ -1,7 +1,8 @@
 
--- SPECTATOR V4
--- CameraSubject + Custom Camera
--- Prev / Next / Stop + Draggable UI
+-- SPECTATOR V5
+-- Direct CameraSubject System
+-- PREV / NEXT / STOP
+-- Draggable UI
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,31 +12,30 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local Camera = workspace.CurrentCamera
+local BIND_NAME = "SpectatorCameraV5"
 
+local targets = {}
 local currentTarget = nil
 local targetIndex = 0
-local targets = {}
 local spectating = false
-local selectionId = 0
 
-local BIND_NAME = "SpectatorCameraV4"
-
--- Hapus GUI lama
-local oldGui = PlayerGui:FindFirstChild("SpectatorV4")
+-- Remove old GUI
+local oldGui = PlayerGui:FindFirstChild("SpectatorV5")
 if oldGui then
     oldGui:Destroy()
 end
 
+RunService:UnbindFromRenderStep(BIND_NAME)
+
 -- GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SpectatorV4"
+ScreenGui.Name = "SpectatorV5"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
 local Main = Instance.new("Frame")
-Main.Name = "Main"
 Main.Size = UDim2.new(0, 280, 0, 155)
-Main.Position = UDim2.new(0.5, -140, 0.75, -80)
+Main.Position = UDim2.new(0.5, -140, 0.72, -75)
 Main.BackgroundColor3 = Color3.fromRGB(20, 23, 32)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -55,7 +55,7 @@ local Header = Instance.new("TextLabel")
 Header.Size = UDim2.new(1, -20, 0, 30)
 Header.Position = UDim2.new(0, 10, 0, 5)
 Header.BackgroundTransparency = 1
-Header.Text = "SPECTATOR V4"
+Header.Text = "SPECTATOR V5"
 Header.TextColor3 = Color3.fromRGB(120, 170, 255)
 Header.Font = Enum.Font.GothamBold
 Header.TextSize = 15
@@ -78,13 +78,13 @@ local Status = Instance.new("TextLabel")
 Status.Size = UDim2.new(1, -20, 0, 20)
 Status.Position = UDim2.new(0, 10, 0, 65)
 Status.BackgroundTransparency = 1
-Status.Text = "Status: Tidak aktif"
+Status.Text = "Spectator tidak aktif"
 Status.TextColor3 = Color3.fromRGB(160, 170, 185)
 Status.Font = Enum.Font.Gotham
 Status.TextSize = 11
 Status.Parent = Main
 
--- Button creator
+-- Button function
 local function createButton(name, text, position, size, color)
     local button = Instance.new("TextButton")
     button.Name = name
@@ -92,10 +92,9 @@ local function createButton(name, text, position, size, color)
     button.Position = position
     button.BackgroundColor3 = color
     button.Text = text
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextColor3 = Color3.new(1, 1, 1)
     button.Font = Enum.Font.GothamBold
     button.TextSize = 12
-    button.AutoButtonColor = true
     button.Parent = Main
 
     local corner = Instance.new("UICorner")
@@ -106,30 +105,27 @@ local function createButton(name, text, position, size, color)
 end
 
 local PrevButton = createButton(
-    "Previous",
-    "◀ PREV",
+    "Previous", "◀ PREV",
     UDim2.new(0, 10, 0, 98),
     UDim2.new(0, 78, 0, 35),
     Color3.fromRGB(48, 65, 95)
 )
 
 local NextButton = createButton(
-    "Next",
-    "NEXT ▶",
+    "Next", "NEXT ▶",
     UDim2.new(0, 192, 0, 98),
     UDim2.new(0, 78, 0, 35),
     Color3.fromRGB(48, 65, 95)
 )
 
 local StopButton = createButton(
-    "Stop",
-    "STOP",
+    "Stop", "STOP",
     UDim2.new(0, 96, 0, 98),
     UDim2.new(0, 88, 0, 35),
     Color3.fromRGB(155, 55, 65)
 )
 
--- Toggle
+-- Toggle button
 local Toggle = Instance.new("TextButton")
 Toggle.Name = "Toggle"
 Toggle.Size = UDim2.new(0, 110, 0, 35)
@@ -145,7 +141,7 @@ local ToggleCorner = Instance.new("UICorner")
 ToggleCorner.CornerRadius = UDim.new(0, 8)
 ToggleCorner.Parent = Toggle
 
--- Drag panel
+-- Drag UI
 local dragging = false
 local dragStart
 local startPosition
@@ -182,7 +178,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Target list
+-- Update player list
 local function updateTargets()
     targets = {}
 
@@ -197,69 +193,29 @@ local function updateTargets()
     end)
 end
 
-local function updateLabel()
+-- Update UI
+local function updateUI()
     if currentTarget then
-        TargetLabel.Text = currentTarget.DisplayName .. "  (@" .. currentTarget.Name .. ")"
-        TargetLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TargetLabel.Text = currentTarget.DisplayName ..
+            "  (@" .. currentTarget.Name .. ")"
+
+        Header.Text = "SPECTATOR V5  •  " ..
+            targetIndex .. "/" .. #targets
     else
         TargetLabel.Text = "Belum memilih target"
-    end
-
-    if #targets > 0 and targetIndex > 0 then
-        Header.Text = "SPECTATOR V4  •  " .. targetIndex .. "/" .. #targets
-    else
-        Header.Text = "SPECTATOR V4"
+        Header.Text = "SPECTATOR V5"
     end
 end
 
--- Camera
-local function restoreCamera()
-    RunService:UnbindFromRenderStep(BIND_NAME)
-
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-
-    Camera = workspace.CurrentCamera
-    Camera.CameraType = Enum.CameraType.Custom
-
-    if humanoid then
-        Camera.CameraSubject = humanoid
-    end
-end
-
-local function startCamera()
-    RunService:UnbindFromRenderStep(BIND_NAME)
-
-    RunService:BindToRenderStep(
-        BIND_NAME,
-        Enum.RenderPriority.Camera.Value + 1,
-        function()
-            if not spectating or not currentTarget then
-                return
-            end
-
-            Camera = workspace.CurrentCamera
-
-            local character = currentTarget.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-
-            if humanoid and humanoid.Health > 0 then
-                Camera.CameraType = Enum.CameraType.Custom
-                Camera.CameraSubject = humanoid
-            end
-        end
-    )
-end
-
--- Select target
+-- Direct spectate
 local function spectatePlayer(index)
     updateTargets()
 
     if #targets == 0 then
         currentTarget = nil
         targetIndex = 0
-        TargetLabel.Text = "Tidak ada pemain lain"
-        Status.Text = "Status: Tidak ada target"
+        Status.Text = "Tidak ada pemain lain"
+        updateUI()
         return
     end
 
@@ -270,65 +226,66 @@ local function spectatePlayer(index)
     end
 
     targetIndex = index
-    currentTarget = targets[index]
-
-    selectionId += 1
-    local mySelection = selectionId
-
+    currentTarget = targets[targetIndex]
     spectating = true
-    updateLabel()
-    startCamera()
 
-    Status.Text = "Status: Mencari karakter..."
+    Camera = workspace.CurrentCamera
 
-    task.spawn(function()
-        local deadline = os.clock() + 12
+    local character = currentTarget.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
-        while os.clock() < deadline do
-            if mySelection ~= selectionId or not spectating then
-                return
-            end
+    updateUI()
 
-            if not currentTarget or currentTarget.Parent ~= Players then
-                return
-            end
-
-            local character = currentTarget.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-
-            if humanoid and root and humanoid.Health > 0 then
-                pcall(function()
-                    LocalPlayer:RequestStreamAroundAsync(root.Position, 3)
-                end)
-
-                if mySelection == selectionId then
-                    Status.Text = "Status: Karakter ditemukan"
-                end
-
-                return
-            end
-
-            task.wait(0.5)
-        end
-
-        if mySelection == selectionId then
-            Status.Text = "Status: Karakter belum tersedia"
-        end
-    end)
+    if humanoid and humanoid.Health > 0 then
+        Camera.CameraType = Enum.CameraType.Custom
+        Camera.CameraSubject = humanoid
+        Status.Text = "Mengikuti: " .. currentTarget.Name
+    else
+        Status.Text = "Karakter target belum tersedia"
+    end
 end
+
+-- Keep camera subject updated
+RunService:BindToRenderStep(
+    BIND_NAME,
+    Enum.RenderPriority.Camera.Value + 1,
+    function()
+        if not spectating or not currentTarget then
+            return
+        end
+
+        local character = currentTarget.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+        if humanoid and humanoid.Health > 0 then
+            Camera = workspace.CurrentCamera
+
+            if Camera.CameraSubject ~= humanoid then
+                Camera.CameraType = Enum.CameraType.Custom
+                Camera.CameraSubject = humanoid
+            end
+        end
+    end
+)
 
 -- Stop
 local function stopSpectating()
     spectating = false
-    selectionId += 1
     currentTarget = nil
     targetIndex = 0
 
-    restoreCamera()
-    updateLabel()
+    Camera = workspace.CurrentCamera
+    Camera.CameraType = Enum.CameraType.Custom
 
-    Status.Text = "Status: Tidak aktif"
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    if humanoid then
+        Camera.CameraSubject = humanoid
+    end
+
+    Status.Text = "Spectator tidak aktif"
+    updateUI()
 end
 
 -- Buttons
@@ -347,26 +304,22 @@ end)
 StopButton.MouseButton1Click:Connect(stopSpectating)
 
 Toggle.MouseButton1Click:Connect(function()
-    if Main.Visible then
-        Main.Visible = false
-    else
-        Main.Visible = true
+    Main.Visible = not Main.Visible
 
-        if not spectating then
-            updateTargets()
-            spectatePlayer(1)
-        end
+    if Main.Visible and not spectating then
+        updateTargets()
+        spectatePlayer(1)
     end
 end)
 
--- Player changes
+-- Player events
 Players.PlayerAdded:Connect(function()
     updateTargets()
+    updateUI()
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     if player == currentTarget then
-        task.wait(0.1)
         updateTargets()
 
         if #targets > 0 then
@@ -376,19 +329,19 @@ Players.PlayerRemoving:Connect(function(player)
         end
     else
         updateTargets()
-        updateLabel()
+        updateUI()
     end
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
+    task.wait(0.3)
 
     if not spectating then
-        restoreCamera()
+        stopSpectating()
     end
 end)
 
 updateTargets()
-Main.Visible = true
+updateUI()
 
-print("Spectator V4 loaded")
+print("Spectator V5 loaded")
